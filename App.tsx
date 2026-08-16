@@ -1,31 +1,50 @@
+import { useState } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import { useMatchStore } from './src/store/matchStore';
+import { useMatch, useMatchStore } from './src/store/matchStore';
 import { useTossState, useTossStore } from './src/store/tossStore';
 import { isTossComplete } from './src/toss/derive';
+import InningsBreakScreen from './src/ui/InningsBreakScreen';
 import InningsSetupScreen from './src/ui/InningsSetupScreen';
+import ResultScreen from './src/ui/ResultScreen';
 import ScoringScreen from './src/ui/ScoringScreen';
 import TossScreen from './src/ui/TossScreen';
 import { FAINT, INK, LINE } from './src/ui/theme';
 
 /**
- * Routing is a fold over state, not a navigation stack — toss, then openers,
- * then scoring. No navigation dependency, and every reload lands exactly where
- * the match actually is.
+ * Routing is a fold over state, not a navigation stack — toss, openers,
+ * scoring, break, chase, result. No navigation dependency, and every reload
+ * lands exactly where the match actually is.
  */
 export default function App() {
   const toss = useTossState();
-  const opening = useMatchStore((s) => s.opening);
+  const { phase } = useMatch();
   const resetMatch = useMatchStore((s) => s.resetMatch);
   const resetToss = useTossStore((s) => s.resetToss);
 
-  const tossDone = isTossComplete(toss);
+  // The only piece of pure UI state: has the scorer left the break screen to
+  // pick the chasing openers? Losing it on reload just shows the break again.
+  const [chaseSetup, setChaseSetup] = useState(false);
 
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="light" />
-      {!tossDone ? <TossScreen /> : opening === null ? <InningsSetupScreen /> : <ScoringScreen />}
+      {!isTossComplete(toss) ? (
+        <TossScreen />
+      ) : phase === 'NO_MATCH' ? (
+        <InningsSetupScreen />
+      ) : phase === 'BREAK' ? (
+        chaseSetup ? (
+          <InningsSetupScreen />
+        ) : (
+          <InningsBreakScreen onStartChase={() => setChaseSetup(true)} />
+        )
+      ) : phase === 'COMPLETE' ? (
+        <ResultScreen />
+      ) : (
+        <ScoringScreen />
+      )}
 
       {/* §7 — judge #3 must not inherit judge #2's mess. */}
       <View style={styles.bar}>
@@ -34,6 +53,7 @@ export default function App() {
           onPress={() => {
             resetMatch();
             resetToss();
+            setChaseSetup(false);
           }}
         >
           <Text style={styles.resetText}>Reset demo</Text>

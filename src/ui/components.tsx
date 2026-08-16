@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useCanUndo, useMatchStore } from '../store/matchStore';
 import { CREAM, FAINT, INK, LIME, LINE, MUTED, PANEL, SUNK, TAP } from './theme';
 
 export function Card({ title, children }: { title?: string; children: ReactNode }) {
@@ -129,6 +130,21 @@ export function Choice({
   );
 }
 
+/**
+ * Undo the last recorded ball. Lives here because it belongs on every screen
+ * where a ball has just been recorded — including the ones that appear once an
+ * innings has ended, since the final ball is the easiest one to mis-tap.
+ */
+export function Undo() {
+  const undo = useMatchStore((st) => st.undo);
+  const canUndo = useCanUndo();
+  return (
+    <Pressable style={[s.undo, !canUndo && s.disabled]} disabled={!canUndo} onPress={undo}>
+      <Text style={s.undoText}>↶ Undo last ball</Text>
+    </Pressable>
+  );
+}
+
 export function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <View style={s.kv}>
@@ -227,4 +243,15 @@ export const s = StyleSheet.create({
   mono: { fontSize: 10, color: '#9fb8aa' },
 
   note: { color: MUTED, fontSize: 13, lineHeight: 19, marginTop: 10 },
+
+  undo: {
+    minHeight: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+  },
+  undoText: { color: CREAM, fontSize: 15, fontWeight: '600' },
 });

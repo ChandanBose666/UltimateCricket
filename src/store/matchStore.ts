@@ -1,9 +1,8 @@
 /**
  * Match store — Zustand + persist → AsyncStorage. No backend, no network.
  *
- * Holds the APPEND-ONLY `BallEvent[]` and the openers. Everything shown on the
- * scoring screen is `derive(events, rules, opening)` — the fold is the truth,
- * the render is a cache of it.
+ * A match is up to two innings, each an APPEND-ONLY `BallEvent[]`. Everything
+ * rendered is `derive(events, rules, opening)` — the fold is the truth.
  *
  * Undo appends a void pointer via the engine's `voidLast`. Nothing is ever
  * deleted or edited.
@@ -15,6 +14,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { derive, voidLast } from '../engine/derive';
+import { resultOf, type MatchResult } from '../engine/summary';
 import { DEFAULT_RULES, type BallEvent, type InningsState, type PlayerId, type Rules } from '../engine/types';
 import { isValid } from '../engine/validate';
 
@@ -27,6 +27,14 @@ export interface Opening {
   strikerId: PlayerId;
   nonStrikerId: PlayerId;
   bowlerId: PlayerId;
+}
+
+export type Side = 'home' | 'away';
+
+export interface InningsRecord {
+  battingSide: Side;
+  opening: Opening;
+  events: BallEvent[];
 }
 
 /**
@@ -44,16 +52,13 @@ const AWAY_SQUAD: Player[] = [
 ].map((name, i) => ({ id: `a${i + 1}`, name }));
 
 interface MatchStore {
-  rules: Rules;
+  oversLimit: number;
   homeSquad: Player[];
   awaySquad: Player[];
+  /** 0, 1 or 2 entries. Index 0 batted first. */
+  innings: InningsRecord[];
 
-  /** Which side is batting this innings. Set from the toss. */
-  battingSide: 'home' | 'away' | null;
-  opening: Opening | null;
-  events: BallEvent[];
-
-  startInnings: (battingSide: 'home' | 'away', opening: Opening, oversLimit: number) => void;
+  startInnings: (battingSide: Side, opening: Opening, oversLimit?: number) => void;
   /** Returns false and records nothing if the engine rejects the ball. */
   recordBall: (e: Omit<BallEvent, 'id'>) => boolean;
   undo: () => void;
@@ -63,57 +68,121 @@ interface MatchStore {
 export const useMatchStore = create<MatchStore>()(
   persist(
     (set, get) => ({
-      rules: DEFAULT_RULES,
+      oversLimit: 5,
       homeSquad: HOME_SQUAD,
       awaySquad: AWAY_SQUAD,
-      battingSide: null,
-      opening: null,
-      events: [],
+      innings: [],
 
       startInnings: (battingSide, opening, oversLimit) =>
         set((s) => ({
-          battingSide,
-          opening,
-          events: [],
-          rules: { ...s.rules, oversLimit },
+          oversLimit: oversLimit ?? s.oversLimit,
+          innings: [...s.innings, { battingSide, opening, events: [] }],
         })),
 
       recordBall: (draft) => {
-        const { events, rules, opening } = get();
-        if (opening === null) return false;
+        const s = get();
+        const idx = s.innings.length - 1;
+        const rec = s.innings[idx];
+        if (rec === undefined) return false;
 
+        const rules = rulesFor(s.innings, s.oversLimit, idx);
         const e: BallEvent = { ...draft, id: nanoid() };
-        const state = derive(events, rules, opening);
-        if (!isValid(state, e, rules)) return false;
+        if (!isValid(derive(rec.events, rules, rec.opening), e, rules)) return false;
 
-        set({ events: [...events, e] });
+        const innings = [...s.innings];
+        innings[idx] = { ...rec, events: [...rec.events, e] };
+        set({ innings });
         return true;
       },
 
       undo: () => {
-        const { events } = get();
-        set({ events: voidLast(events, nanoid()) });
+        const s = get();
+        const idx = s.innings.length - 1;
+        const rec = s.innings[idx];
+        if (rec === undefined) return;
+
+        const innings = [...s.innings];
+        innings[idx] = { ...rec, events: voidLast(rec.events, nanoid()) };
+        set({ innings });
       },
 
-      resetMatch: () => set({ battingSide: null, opening: null, events: [] }),
+      resetMatch: () => set({ innings: [] }),
     }),
     {
-      name: 'uc-match-v1',
+      // v2: the shape changed from one innings to a list. A new key rather
+      // than a migration — this is demo data, not something to preserve.
+      name: 'uc-match-v2',
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),
 );
 
-/** The fold. Null until the innings has openers. */
-export function useInnings(): InningsState | null {
-  const events = useMatchStore((s) => s.events);
-  const rules = useMatchStore((s) => s.rules);
-  const opening = useMatchStore((s) => s.opening);
-  if (opening === null) return null;
-  return derive(events, rules, opening);
+// --------------------------------------------------------------- derived ---
+
+/**
+ * Rules for innings `i`. The second innings carries the target, which is what
+ * makes the engine report TARGET_CHASED on its own.
+ */
+export function rulesFor(innings: InningsRecord[], oversLimit: number, i: number): Rules {
+  const base: Rules = { ...DEFAULT_RULES, oversLimit };
+  if (i === 0) return base;
+
+  const first = innings[0];
+  if (first === undefined) return base;
+  return { ...base, target: derive(first.events, base, first.opening).runs + 1 };
 }
 
-/** How many non-voided balls are on the log — is there anything to undo? */
-export function useCanUndo(): boolean {
-  return useMatchStore((s) => s.events.some((e) => !e.voidedBy));
+export type MatchPhase = 'NO_MATCH' | 'INNINGS_1' | 'BREAK' | 'INNINGS_2' | 'COMPLETE';
+
+export interface InningsView {
+  index: number;
+  record: InningsRecord;
+  state: InningsState;
+  rules: Rules;
 }
+
+export interface MatchView {
+  oversLimit: number;
+  innings: InningsView[];
+  /** The innings being scored, or null at a break / before the match. */
+  current: InningsView | null;
+  phase: MatchPhase;
+  result: MatchResult;
+}
+
+/** The whole match as a fold. Cheap enough to recompute on every render. */
+export function useMatch(): MatchView {
+  const records = useMatchStore((s) => s.innings);
+  const oversLimit = useMatchStore((s) => s.oversLimit);
+
+  const innings: InningsView[] = records.map((record, index) => {
+    const rules = rulesFor(records, oversLimit, index);
+    return { index, record, state: derive(record.events, rules, record.opening), rules };
+  });
+
+  const last = innings[innings.length - 1];
+  const live = last !== undefined && last.state.status === 'IN_PROGRESS';
+
+  let phase: MatchPhase = 'NO_MATCH';
+  if (innings.length === 1) phase = live ? 'INNINGS_1' : 'BREAK';
+  else if (innings.length >= 2) phase = live ? 'INNINGS_2' : 'COMPLETE';
+
+  const first = innings[0];
+  const second = innings[1];
+  const result: MatchResult =
+    first !== undefined && second !== undefined
+      ? resultOf(first.state, second.state, second.rules)
+      : { kind: 'IN_PROGRESS' };
+
+  return { oversLimit, innings, current: live ? (last ?? null) : null, phase, result };
+}
+
+/** Is there a ball to undo in the innings currently being scored? */
+export function useCanUndo(): boolean {
+  return useMatchStore((s) => {
+    const rec = s.innings[s.innings.length - 1];
+    return rec !== undefined && rec.events.some((e) => !e.voidedBy);
+  });
+}
+
+export const otherSide = (side: Side): Side => (side === 'home' ? 'away' : 'home');

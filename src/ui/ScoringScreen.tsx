@@ -3,8 +3,9 @@
  *
  * House rules being honoured here:
  *  - NO cricket rule lives in this file. Strike rotation, free hits, what a
- *    wide does to the over count — all of that is the engine's. This file
- *    builds a candidate `BallEvent`, asks `isValid()`, and renders.
+ *    wide does to the over count, when the chase is won — all of that is the
+ *    engine's. This file builds a candidate `BallEvent`, asks `isValid()`,
+ *    and renders.
  *  - Illegal actions are DISABLED BUTTONS, never error toasts (§7).
  *  - Undo is always on screen, unlimited, no confirmation dialog.
  */
@@ -14,6 +15,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatOvers, runRate, scoreline, totalExtras } from '../engine/derive';
 import { isLegalDelivery } from '../engine/reduce';
+import { chaseState } from '../engine/summary';
 import type {
   BallEvent,
   ExtraType,
@@ -23,9 +25,9 @@ import type {
   WicketKind,
 } from '../engine/types';
 import { isValid } from '../engine/validate';
-import { useCanUndo, useInnings, useMatchStore } from '../store/matchStore';
+import { otherSide, useMatch, useMatchStore, type Side } from '../store/matchStore';
 import { useTossStore } from '../store/tossStore';
-import { Card, Pill, Primary, s as c } from './components';
+import { Card, Pill, Primary, Undo, s as c } from './components';
 import { CREAM, FAINT, INK, LIME, LINE, MUTED, PANEL, SUNK, TAP, WARN } from './theme';
 
 const RUN_BUTTONS = [0, 1, 2, 3, 4, 6];
@@ -46,19 +48,17 @@ const WICKET_KINDS: WicketKind[] = [
   'HIT_WICKET',
 ];
 
+/** Dismissals where naming a fielder makes the scorecard read properly. */
+const NEEDS_FIELDER: WicketKind[] = ['CAUGHT', 'STUMPED', 'RUN_OUT'];
+
 const kindLabel = (k: WicketKind) =>
   k.replace('_', ' ').toLowerCase().replace(/^./, (m) => m.toUpperCase());
 
 export default function ScoringScreen() {
-  const s = useInnings();
-  const rules = useMatchStore((st) => st.rules);
-  const events = useMatchStore((st) => st.events);
-  const battingSide = useMatchStore((st) => st.battingSide);
+  const { current } = useMatch();
   const homeSquad = useMatchStore((st) => st.homeSquad);
   const awaySquad = useMatchStore((st) => st.awaySquad);
   const recordBall = useMatchStore((st) => st.recordBall);
-  const undo = useMatchStore((st) => st.undo);
-  const canUndo = useCanUndo();
 
   const home = useTossStore((st) => st.home);
   const away = useTossStore((st) => st.away);
@@ -68,14 +68,21 @@ export default function ScoringScreen() {
   const [wicketOpen, setWicketOpen] = useState(false);
   const [kind, setKind] = useState<WicketKind>('BOWLED');
   const [outId, setOutId] = useState<PlayerId | null>(null);
+  const [fielderId, setFielderId] = useState<PlayerId | null>(null);
   const [newBatterId, setNewBatterId] = useState<PlayerId | null>(null);
   const [wicketRuns, setWicketRuns] = useState(0);
   const [crossed, setCrossed] = useState(false);
 
-  if (s === null || battingSide === null) return null;
+  if (current === null) return null;
 
-  const battingSquad = battingSide === 'home' ? homeSquad : awaySquad;
-  const bowlingSquad = battingSide === 'home' ? awaySquad : homeSquad;
+  const s = current.state;
+  const rules = current.rules;
+  const events = current.record.events;
+  const battingSide: Side = current.record.battingSide;
+
+  const squadFor = (side: Side) => (side === 'home' ? homeSquad : awaySquad);
+  const battingSquad = squadFor(battingSide);
+  const bowlingSquad = squadFor(otherSide(battingSide));
   const battingName = battingSide === 'home' ? home.name : away.name;
 
   const nameOf = (id: PlayerId | null): string => {
@@ -87,9 +94,11 @@ export default function ScoringScreen() {
     );
   };
 
+  const chase = chaseState(s, rules);
+
   // --- which bowler is on? At an over boundary the scorer must choose. ------
   const overIdx = Math.floor(s.legalBalls / 6);
-  const needsBowler = s.legalBalls > 0 && s.legalBalls % 6 === 0 && s.status === 'IN_PROGRESS';
+  const needsBowler = s.legalBalls > 0 && s.legalBalls % 6 === 0;
   const picked = pick !== null && pick.over === overIdx ? pick.id : null;
   const bowlerId = needsBowler ? picked : s.bowlerId;
 
@@ -118,7 +127,12 @@ export default function ScoringScreen() {
     runsOffBat: wicketRuns,
     extraType: null,
     extraRuns: 0,
-    wicket: { kind: k, outPlayerId: outId ?? s.strikerId ?? '', crossed },
+    wicket: {
+      kind: k,
+      outPlayerId: outId ?? s.strikerId ?? '',
+      crossed,
+      ...(fielderId !== null ? { fielderId } : {}),
+    },
     ...(newBatterId !== null ? { newBatterId } : {}),
   });
 
@@ -128,13 +142,13 @@ export default function ScoringScreen() {
     setWicketOpen(false);
     setKind('BOWLED');
     setOutId(null);
+    setFielderId(null);
     setNewBatterId(null);
     setWicketRuns(0);
     setCrossed(false);
   };
 
   const yetToBat = battingSquad.filter((p) => !s.battingOrder.includes(p.id));
-  const live = s.status === 'IN_PROGRESS';
 
   return (
     <View style={styles.root}>
@@ -152,7 +166,17 @@ export default function ScoringScreen() {
           </View>
         </View>
 
-        {s.freeHitNext && live && (
+        {chase !== null && (
+          <View style={styles.chase}>
+            <Text style={styles.chaseText}>
+              Need {chase.runsNeeded} from {chase.ballsRemaining}
+              {chase.ballsRemaining === 1 ? ' ball' : ' balls'}
+            </Text>
+            <Text style={styles.chaseSub}>RRR {chase.requiredRate.toFixed(2)}</Text>
+          </View>
+        )}
+
+        {s.freeHitNext && (
           <View style={styles.freeHit}>
             <Text style={styles.freeHitText}>FREE HIT — only a run out counts</Text>
           </View>
@@ -178,18 +202,8 @@ export default function ScoringScreen() {
           <OverStrip events={events} />
         </Card>
 
-        {/* ------------------------------------------------ innings over -- */}
-        {!live && (
-          <Card title="Innings complete">
-            <Text style={styles.done}>{statusLine(s)}</Text>
-            <Text style={styles.doneSub}>
-              {battingName} {scoreline(s)}
-            </Text>
-          </Card>
-        )}
-
         {/* -------------------------------------------- new bowler needed -- */}
-        {live && needsBowler && picked === null && (
+        {needsBowler && picked === null && (
           <Card title={`Over ${overIdx} complete — who bowls next?`}>
             <View style={c.wrap}>
               {bowlingSquad.map((p) => (
@@ -208,7 +222,7 @@ export default function ScoringScreen() {
         )}
 
         {/* ------------------------------------------------ wicket panel -- */}
-        {live && wicketOpen && bowlerId !== null && (
+        {wicketOpen && bowlerId !== null && (
           <Card title="Wicket">
             <Text style={styles.label}>How out</Text>
             <View style={c.wrap}>
@@ -236,6 +250,22 @@ export default function ScoringScreen() {
                 ),
               )}
             </View>
+
+            {NEEDS_FIELDER.includes(kind) && (
+              <>
+                <Text style={styles.label}>Fielder (optional)</Text>
+                <View style={c.wrap}>
+                  {bowlingSquad.map((p) => (
+                    <Pill
+                      key={p.id}
+                      label={p.name}
+                      selected={fielderId === p.id}
+                      onPress={() => setFielderId((f) => (f === p.id ? null : p.id))}
+                    />
+                  ))}
+                </View>
+              </>
+            )}
 
             <Text style={styles.label}>Runs completed</Text>
             <View style={c.wrap}>
@@ -288,7 +318,7 @@ export default function ScoringScreen() {
         )}
 
         {/* --------------------------------------------------- the pad ---- */}
-        {live && !wicketOpen && bowlerId !== null && (
+        {!wicketOpen && bowlerId !== null && (
           <>
             <Card title="Extra">
               <View style={c.wrap}>
@@ -337,13 +367,7 @@ export default function ScoringScreen() {
           </>
         )}
 
-        <Pressable
-          style={[styles.undo, !canUndo && c.disabled]}
-          disabled={!canUndo}
-          onPress={undo}
-        >
-          <Text style={styles.undoText}>↶ Undo last ball</Text>
-        </Pressable>
+        <Undo />
       </ScrollView>
     </View>
   );
@@ -380,19 +404,6 @@ function bowlerFigures(s: InningsState, bowlerId: PlayerId | null): string {
   const b = s.bowlers[bowlerId];
   if (b === undefined) return '0.0-0-0-0';
   return `${formatOvers(b.balls)}-${b.maidens}-${b.runs}-${b.wickets}`;
-}
-
-function statusLine(s: InningsState): string {
-  switch (s.status) {
-    case 'ALL_OUT':
-      return 'All out.';
-    case 'OVERS_DONE':
-      return 'Overs complete.';
-    case 'TARGET_CHASED':
-      return 'Target chased.';
-    default:
-      return '';
-  }
 }
 
 function armedHint(armed: ExtraType | null): string {
@@ -488,6 +499,20 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 16, marginTop: 4 },
   meta: { color: MUTED, fontSize: 13 },
 
+  chase: {
+    backgroundColor: '#10261a',
+    borderColor: LIME,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  chaseText: { color: LIME, fontWeight: '800', fontSize: 15 },
+  chaseSub: { color: MUTED, fontSize: 13 },
+
   freeHit: {
     backgroundColor: '#3a2a10',
     borderColor: WARN,
@@ -573,7 +598,4 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   undoText: { color: CREAM, fontSize: 15, fontWeight: '600' },
-
-  done: { color: CREAM, fontSize: 20, fontWeight: '800' },
-  doneSub: { color: MUTED, fontSize: 15, marginTop: 6 },
 });

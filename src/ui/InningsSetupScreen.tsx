@@ -1,14 +1,15 @@
 /**
- * Between the toss and the first ball: how long, who opens, who bowls.
+ * Between innings and the first ball: how long, who opens, who bowls.
  *
- * Which side bats is NOT chosen here — it comes from the toss record via
- * `battingFirst()`. Law 13.5 means there is no path back to change it.
+ * Which side bats is NOT chosen here. In the first innings it comes from the
+ * toss record via `battingFirst()` — Law 13.5 means there is no path back to
+ * change it. In the second it is simply the other side.
  */
 
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { useMatchStore } from '../store/matchStore';
+import { otherSide, useMatch, useMatchStore, type Side } from '../store/matchStore';
 import { useTossState, useTossStore } from '../store/tossStore';
 import { battingFirst } from '../toss/derive';
 import { Card, Pill, Primary, s as c } from './components';
@@ -18,6 +19,7 @@ const OVERS_OPTIONS = [5, 10, 20];
 
 export default function InningsSetupScreen() {
   const toss = useTossState();
+  const { innings, oversLimit: currentOvers } = useMatch();
   const home = useTossStore((st) => st.home);
   const away = useTossStore((st) => st.away);
 
@@ -25,41 +27,55 @@ export default function InningsSetupScreen() {
   const awaySquad = useMatchStore((st) => st.awaySquad);
   const startInnings = useMatchStore((st) => st.startInnings);
 
-  const [overs, setOvers] = useState(5);
+  const [overs, setOvers] = useState(currentOvers);
   const [strikerId, setStrikerId] = useState<string | null>(null);
   const [nonStrikerId, setNonStrikerId] = useState<string | null>(null);
   const [bowlerId, setBowlerId] = useState<string | null>(null);
 
-  const battingTeamId = battingFirst(toss);
-  const battingSide: 'home' | 'away' = battingTeamId === home.id ? 'home' : 'away';
-  const battingSquad = battingSide === 'home' ? homeSquad : awaySquad;
-  const bowlingSquad = battingSide === 'home' ? awaySquad : homeSquad;
-  const battingName = battingSide === 'home' ? home.name : away.name;
-  const bowlingName = battingSide === 'home' ? away.name : home.name;
+  const isFirstInnings = innings.length === 0;
+  const first = innings[0];
+
+  const battingSide: Side = isFirstInnings
+    ? battingFirst(toss) === home.id
+      ? 'home'
+      : 'away'
+    : otherSide(first!.record.battingSide);
+
+  const squadFor = (side: Side) => (side === 'home' ? homeSquad : awaySquad);
+  const nameFor = (side: Side) => (side === 'home' ? home.name : away.name);
+
+  const battingSquad = squadFor(battingSide);
+  const bowlingSquad = squadFor(otherSide(battingSide));
 
   const ready = strikerId !== null && nonStrikerId !== null && bowlerId !== null;
+  const target = first !== undefined ? first.state.runs + 1 : null;
 
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>INNINGS 1</Text>
-          <Text style={styles.title}>{battingName} batting</Text>
-          <Text style={styles.sub}>{bowlingName} in the field</Text>
+          <Text style={styles.eyebrow}>{isFirstInnings ? 'INNINGS 1' : 'INNINGS 2'}</Text>
+          <Text style={styles.title}>{nameFor(battingSide)} batting</Text>
+          <Text style={styles.sub}>
+            {nameFor(otherSide(battingSide))} in the field
+            {target !== null ? ` · chasing ${target}` : ''}
+          </Text>
         </View>
 
-        <Card title="Overs">
-          <View style={c.wrap}>
-            {OVERS_OPTIONS.map((o) => (
-              <Pill
-                key={o}
-                label={`${o} overs`}
-                selected={overs === o}
-                onPress={() => setOvers(o)}
-              />
-            ))}
-          </View>
-        </Card>
+        {isFirstInnings && (
+          <Card title="Overs">
+            <View style={c.wrap}>
+              {OVERS_OPTIONS.map((o) => (
+                <Pill
+                  key={o}
+                  label={`${o} overs`}
+                  selected={overs === o}
+                  onPress={() => setOvers(o)}
+                />
+              ))}
+            </View>
+          </Card>
+        )}
 
         <Card title="Striker">
           <View style={c.wrap}>
@@ -103,11 +119,15 @@ export default function InningsSetupScreen() {
         </Card>
 
         <Primary
-          label="Start the innings"
+          label={isFirstInnings ? 'Start the innings' : 'Start the chase'}
           disabled={!ready}
           onPress={() => {
             if (strikerId === null || nonStrikerId === null || bowlerId === null) return;
-            startInnings(battingSide, { strikerId, nonStrikerId, bowlerId }, overs);
+            startInnings(
+              battingSide,
+              { strikerId, nonStrikerId, bowlerId },
+              isFirstInnings ? overs : undefined,
+            );
           }}
         />
       </ScrollView>
