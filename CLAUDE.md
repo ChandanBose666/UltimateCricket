@@ -4,13 +4,15 @@ Read this fully before writing any code. Then read `docs/HACKATHON_PLAN.md`.
 
 ## Status
 
-**Blocks T+0→1 (scaffold), T+1→5 (engine) and T+5→6.5 (toss) are DONE and validated.**
+**Blocks T+0→1 (scaffold), T+1→5 (engine), T+5→6.5 (toss), T+6.5→13 (scoring UI) and
+T+13→16 (scorecard, innings break, result) are DONE and validated.**
 
 - Expo SDK 57 / RN 0.86 / React 19.2. Deps are exactly the §2 list, nothing else.
-- `src/engine/` — 56 tests. `src/toss/` — 61 tests. **117 passing**, strict typecheck clean.
+- `src/engine/` — 80 tests. `src/toss/` — 61 tests. **141 passing**, strict typecheck clean.
 - Verify with `npx vitest run && npx tsc --noEmit`.
-- Web build proven end to end (`npx expo export -p web`), not just compiled — the digital
-  toss was clicked through in a browser and the commit hash re-hashes to match.
+- Web build proven end to end (`npx expo export -p web`), not just compiled — a full match
+  was played in a browser: 5-over innings → break → chase → result.
+- Pushed to https://github.com/ChandanBose666/UltimateCricket (public).
 
 **Do not refactor or rewrite `src/engine/` or `src/toss/`.** If you need behaviour they
 lack, add a failing test first, then extend. They are the parts of this build that are
@@ -23,7 +25,8 @@ Two toss details that differ from `HACKATHON_PLAN.md` §5, both deliberate:
   from the hash shown on screen before calling.
 - `call` and `result` are **optional** on `TossRecord`, so `PHYSICAL_COIN` stays two taps.
 
-Next block is T+6.5→13, the scoring UI.
+Next block is T+19.5→22.5, the knockout bracket. The engine, the toss and the match
+flow are the parts that are known-correct — extend them with a failing test first.
 
 ## Context
 
