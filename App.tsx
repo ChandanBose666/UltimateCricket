@@ -14,7 +14,7 @@ import InningsSetupScreen from './src/ui/InningsSetupScreen';
 import ResultScreen from './src/ui/ResultScreen';
 import ScoringScreen from './src/ui/ScoringScreen';
 import TossScreen from './src/ui/TossScreen';
-import { FAINT, INK, LIME, LINE } from './src/ui/theme';
+import { FAINT, INK, LIME, LINE, TAP } from './src/ui/theme';
 
 /**
  * Routing is a fold over state, not a navigation stack — toss, openers,
@@ -104,7 +104,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: LINE,
   },
-  barItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 20 },
+  // §7 — tap targets ≥ 48dp. People score one-handed while watching a match.
+  barItem: { minHeight: TAP, justifyContent: 'center', paddingHorizontal: 20 },
   navText: { color: LIME, fontSize: 13, fontWeight: '700' },
   resetText: { color: FAINT, fontSize: 13 },
 });

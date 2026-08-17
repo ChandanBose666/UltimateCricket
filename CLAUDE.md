@@ -5,12 +5,14 @@ Read this fully before writing any code. Then read `docs/HACKATHON_PLAN.md`.
 ## Status
 
 **Blocks T+0→1 (scaffold), T+1→5 (engine), T+5→6.5 (toss), T+6.5→13 (scoring UI),
-T+13→16 (scorecard, innings break, result) and T+19.5→22.5 (knockout bracket) are DONE
-and validated.**
+T+13→16 (scorecard, innings break, result), T+19.5→22.5 (knockout bracket) and
+T+22.5→25 (hardening) are DONE and validated.**
+
+**Next is T+25 → DEPLOY. That is the hard deadline in §3 and it must not slip.**
 
 - Expo SDK 57 / RN 0.86 / React 19.2. Deps are exactly the §2 list, nothing else.
 - `src/engine/` — 80 tests. `src/toss/` — 61 tests. `src/bracket/` — 21 tests.
-  **162 passing**, strict typecheck clean.
+  `src/seed/` — 13 tests. **175 passing**, strict typecheck clean.
 - Verify with `npx vitest run && npx tsc --noEmit`.
 - Web build proven end to end (`npx expo export -p web`), not just compiled — a full match
   was played in a browser: 5-over innings → break → chase → result, then a bracket tie
@@ -43,9 +45,29 @@ Two consequences worth remembering before changing anything here:
   names, cleared toss). A finished tie keeps its scoreline, not its ball log.
 - A **tied knockout match advances nobody** and offers a replay. Super over is cut (§1).
 
-Next block is T+22.5→25, hardening (§7). Then deploy at T+25 — **do not slip that**.
-The engine, the toss, the match flow and the bracket are the known-correct parts — extend
-them with a failing test first.
+## The seeded demo (§7)
+
+`src/seed/demo.ts` is pure and is the state the app opens in and resets to: Nagpur Royals
+61/3 (7.2) of 10, three quarter-finals decided, the fourth being scored, toss already
+confirmed with an umpire.
+
+- The innings is a table of overs **expanded through the engine** — the builder folds the
+  events so far and reads the striker off the result. Never re-implement rotation here.
+- Its tests replay every prefix through `validate()`. The seed cannot contain a ball a
+  real scorer would be blocked from recording.
+- **`resetToDemo()` in `src/store/demo.ts` is the judge-facing reset.** The stores' own
+  `resetMatch` / `resetToss` / `resetBracket` are narrower primitives — `startTie()` uses
+  them, so do not make them restore the seed or every bracket tie inherits the wrong toss.
+- Persist keys are `uc-match-v3`, `uc-toss-v2`, `uc-bracket-v2`. **Bump the key** whenever
+  seeded initial state changes, or a stale blob hides it.
+
+`ErrorBoundary` wraps the routing fold. The folds that read persisted data live in
+`<Screens/>` *below* it, deliberately — hooks in `App`'s own body would throw above the
+boundary and produce a white page it could never catch.
+
+Deploy next (T+25): `npx expo export -p web` then Vercel, and `eas build -p android
+--profile preview`. The engine, toss, match flow, bracket and seed are the known-correct
+parts — extend them with a failing test first.
 
 ## Context
 
