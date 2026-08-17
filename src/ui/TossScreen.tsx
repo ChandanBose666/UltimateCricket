@@ -209,8 +209,10 @@ export default function TossScreen() {
         {s.phase === 'AWAITING_REVEAL' && (
           <Card title={`${away.name} called ${s.call}`}>
             <Text style={styles.note}>
-              {officialLabel(s)} now reveals the nonce. Anyone can re-hash it and check it
-              against the commit above.
+              {isCaptainsConfirmFallback(s)
+                ? 'Both captains now reveal the nonce, together.'
+                : `${officialLabel(s)} now reveals the nonce.`}{' '}
+              Anyone can re-hash it and check it against the commit above.
             </Text>
             <Primary
               label="Reveal the coin"
@@ -232,7 +234,9 @@ export default function TossScreen() {
         {s.phase === 'AWAITING_OUTCOME' && (
           <Card title="Who won the toss?">
             <Text style={styles.note}>
-              {officialLabel(s)} records what the coin did in front of both captains.
+              {isCaptainsConfirmFallback(s)
+                ? 'Both captains record what the coin did, together.'
+                : `${officialLabel(s)} records what the coin did in front of both captains.`}
             </Text>
             <View style={c.row}>
               {[home, away].map((t) => (
