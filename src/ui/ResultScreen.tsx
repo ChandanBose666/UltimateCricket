@@ -7,11 +7,13 @@
 
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { teamNameFor } from '../bracket/teams';
 import { scoreline } from '../engine/derive';
 import { resultText } from '../engine/summary';
+import { useActiveTie, useBracketStore } from '../store/bracketStore';
 import { otherSide, useMatch, useMatchStore, type Side } from '../store/matchStore';
 import { useTossStore } from '../store/tossStore';
-import { Card, Undo } from './components';
+import { Card, Note, Primary, Undo } from './components';
 import { Scorecard } from './Scorecard';
 import { CREAM, INK, LIME, MUTED } from './theme';
 
@@ -21,6 +23,9 @@ export default function ResultScreen() {
   const awaySquad = useMatchStore((s) => s.awaySquad);
   const home = useTossStore((s) => s.home);
   const away = useTossStore((s) => s.away);
+  const tie = useActiveTie();
+  const recordResult = useBracketStore((s) => s.recordResult);
+  const startTie = useBracketStore((s) => s.startTie);
 
   const first = innings[0];
   const second = innings[1];
@@ -31,15 +36,21 @@ export default function ResultScreen() {
 
   const firstSide = first.record.battingSide;
   const secondSide = second.record.battingSide;
+  const summary = resultText(result, nameFor(firstSide), nameFor(secondSide));
+
+  // Which side of the tie won. A tie has no winner and cannot advance anyone —
+  // no super over in this build (plan §1), so the knockout tie is replayed.
+  const winningSide: Side | null =
+    result.kind === 'WON_BY_RUNS' ? firstSide : result.kind === 'WON_BY_WICKETS' ? secondSide : null;
+  const winnerId =
+    tie === null || winningSide === null ? null : winningSide === 'home' ? tie.homeId : tie.awayId;
 
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>MATCH COMPLETE</Text>
-          <Text style={styles.result}>
-            {resultText(result, nameFor(firstSide), nameFor(secondSide))}
-          </Text>
+          <Text style={styles.result}>{summary}</Text>
         </View>
 
         <Card>
@@ -52,6 +63,31 @@ export default function ResultScreen() {
             <Text style={styles.score}>{scoreline(second.state)}</Text>
           </View>
         </Card>
+
+        {tie !== null && (
+          <Card title={`${tie.id} · knockout`}>
+            {winnerId !== null ? (
+              <>
+                <Note>
+                  Posting the result advances {teamNameFor(winnerId)} in the draw. The ball log
+                  ends here — the bracket keeps the scoreline.
+                </Note>
+                <Primary
+                  label={`Record result → ${teamNameFor(winnerId)}`}
+                  onPress={() => recordResult(tie.id, { winnerId, summary })}
+                />
+              </>
+            ) : (
+              <>
+                <Note>
+                  A tied knockout match advances nobody. There is no super over in this build, so
+                  the tie is replayed.
+                </Note>
+                <Primary label="Replay this tie" onPress={() => startTie(tie.id)} />
+              </>
+            )}
+          </Card>
+        )}
 
         <Scorecard
           title={`${nameFor(firstSide)} — 1st innings`}

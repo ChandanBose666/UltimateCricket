@@ -58,6 +58,8 @@ interface MatchStore {
   /** 0, 1 or 2 entries. Index 0 batted first. */
   innings: InningsRecord[];
 
+  /** Swap in the two squads playing. Used when a bracket tie is started. */
+  setSquads: (home: Player[], away: Player[]) => void;
   startInnings: (battingSide: Side, opening: Opening, oversLimit?: number) => void;
   /** Returns false and records nothing if the engine rejects the ball. */
   recordBall: (e: Omit<BallEvent, 'id'>) => boolean;
@@ -72,6 +74,8 @@ export const useMatchStore = create<MatchStore>()(
       homeSquad: HOME_SQUAD,
       awaySquad: AWAY_SQUAD,
       innings: [],
+
+      setSquads: (homeSquad, awaySquad) => set({ homeSquad, awaySquad }),
 
       startInnings: (battingSide, opening, oversLimit) =>
         set((s) => ({
