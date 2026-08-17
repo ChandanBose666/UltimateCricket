@@ -11,8 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "export:web": "expo export -p web",
-    "deploy:web": "expo export -p web && vercel deploy dist --prod",
-    "build:apk": "eas build -p android --profile preview"
+    "deploy:web": "expo export -p web && npx --yes vercel@latest deploy dist --prod",
+    "build:apk": "npx --yes eas-cli@latest build -p android --profile preview"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
