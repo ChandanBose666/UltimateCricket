@@ -4,15 +4,19 @@ Read this fully before writing any code. Then read `docs/HACKATHON_PLAN.md`.
 
 ## Status
 
-**Blocks T+0→1 (scaffold), T+1→5 (engine), T+5→6.5 (toss), T+6.5→13 (scoring UI) and
-T+13→16 (scorecard, innings break, result) are DONE and validated.**
+**Blocks T+0→1 (scaffold), T+1→5 (engine), T+5→6.5 (toss), T+6.5→13 (scoring UI),
+T+13→16 (scorecard, innings break, result) and T+19.5→22.5 (knockout bracket) are DONE
+and validated.**
 
 - Expo SDK 57 / RN 0.86 / React 19.2. Deps are exactly the §2 list, nothing else.
-- `src/engine/` — 80 tests. `src/toss/` — 61 tests. **141 passing**, strict typecheck clean.
+- `src/engine/` — 80 tests. `src/toss/` — 61 tests. `src/bracket/` — 21 tests.
+  **162 passing**, strict typecheck clean.
 - Verify with `npx vitest run && npx tsc --noEmit`.
 - Web build proven end to end (`npx expo export -p web`), not just compiled — a full match
-  was played in a browser: 5-over innings → break → chase → result.
-- Pushed to https://github.com/ChandanBose666/UltimateCricket (public).
+  was played in a browser: 5-over innings → break → chase → result, then a bracket tie
+  played the same way and its winner posted into the semi-final.
+- Pushed to https://github.com/ChandanBose666/UltimateCricket (public). **The bracket
+  commits are local — push them.**
 
 **Do not refactor or rewrite `src/engine/` or `src/toss/`.** If you need behaviour they
 lack, add a failing test first, then extend. They are the parts of this build that are
@@ -25,8 +29,24 @@ Two toss details that differ from `HACKATHON_PLAN.md` §5, both deliberate:
   from the hash shown on screen before calling.
 - `call` and `result` are **optional** on `TossRecord`, so `PHYSICAL_COIN` stays two taps.
 
-Next block is T+19.5→22.5, the knockout bracket. The engine, the toss and the match
-flow are the parts that are known-correct — extend them with a failing test first.
+## The bracket
+
+`src/bracket/` is pure, like the engine and the toss. The only recorded state is a map of
+tie → result; who plays whom is derived by propagating winners up a static draw, so
+auto-advance is a consequence of the fold rather than a feature. One rule carries the
+weight: **a recorded result counts only while its winner is a participant of that tie.**
+That is why replaying a quarter-final drops the now-meaningless rounds beneath it with no
+cascade code — do not "fix" it by adding one.
+
+Two consequences worth remembering before changing anything here:
+
+- Only **one match exists at a time**. Starting a tie rebinds that slot (squads, team
+  names, cleared toss). A finished tie keeps its scoreline, not its ball log.
+- A **tied knockout match advances nobody** and offers a replay. Super over is cut (§1).
+
+Next block is T+22.5→25, hardening (§7). Then deploy at T+25 — **do not slip that**.
+The engine, the toss, the match flow and the bracket are the known-correct parts — extend
+them with a failing test first.
 
 ## Context
 
