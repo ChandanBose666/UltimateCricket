@@ -17,6 +17,7 @@ import { derive, voidLast } from '../engine/derive';
 import { resultOf, type MatchResult } from '../engine/summary';
 import { DEFAULT_RULES, type BallEvent, type InningsState, type PlayerId, type Rules } from '../engine/types';
 import { isValid } from '../engine/validate';
+import { DEMO } from '../seed/demo';
 
 export interface Player {
   id: PlayerId;
@@ -38,18 +39,17 @@ export interface InningsRecord {
 }
 
 /**
- * Seeded squads. A judge landing on a "Create Team" button creates one team,
- * gets bored and leaves (§7) — so the match is playable the second it opens.
+ * The seeded innings (§7). A judge landing on a "Create Team" button creates
+ * one team, gets bored and leaves — so the app opens mid-innings instead.
+ *
+ * Rebuilt on each call: the events array must never be shared with the seed
+ * module, or a reset would hand back an array the last judge has appended to.
  */
-const HOME_SQUAD: Player[] = [
-  'A. Rane', 'V. Kohli-Patil', 'S. Gill', 'R. Pandya', 'K. Yadav', 'M. Shaikh',
-  'T. Desai', 'N. Bhosale', 'P. Chavan', 'D. Kulkarni', 'G. Naik',
-].map((name, i) => ({ id: `h${i + 1}`, name }));
-
-const AWAY_SQUAD: Player[] = [
-  'J. Fernandes', 'H. Joshi', 'B. Salvi', 'C. Mane', 'I. Sheikh', 'L. Gaikwad',
-  'O. Pawar', 'U. More', 'Y. Jadhav', 'Z. Khan', 'E. Dsouza',
-].map((name, i) => ({ id: `a${i + 1}`, name }));
+export const seededInnings = (): InningsRecord => ({
+  battingSide: DEMO.innings.battingSide,
+  opening: { ...DEMO.innings.opening },
+  events: [...DEMO.innings.events],
+});
 
 interface MatchStore {
   oversLimit: number;
@@ -70,10 +70,10 @@ interface MatchStore {
 export const useMatchStore = create<MatchStore>()(
   persist(
     (set, get) => ({
-      oversLimit: 5,
-      homeSquad: HOME_SQUAD,
-      awaySquad: AWAY_SQUAD,
-      innings: [],
+      oversLimit: DEMO.oversLimit,
+      homeSquad: [...DEMO.homeSquad],
+      awaySquad: [...DEMO.awaySquad],
+      innings: [seededInnings()],
 
       setSquads: (homeSquad, awaySquad) => set({ homeSquad, awaySquad }),
 
@@ -110,12 +110,18 @@ export const useMatchStore = create<MatchStore>()(
         set({ innings });
       },
 
+      /**
+       * Clear the match slot. NOT the demo reset — `startTie` uses this to
+       * make room for a bracket tie, so it must leave no innings behind.
+       * The judge-facing reset is `resetToDemo()` in ./demo.
+       */
       resetMatch: () => set({ innings: [] }),
     }),
     {
-      // v2: the shape changed from one innings to a list. A new key rather
-      // than a migration — this is demo data, not something to preserve.
-      name: 'uc-match-v2',
+      // v3: the seeded demo innings replaced the empty initial state. A new
+      // key rather than a migration — this is demo data, not something to
+      // preserve, and a stale v2 blob would hide the seed entirely.
+      name: 'uc-match-v3',
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),

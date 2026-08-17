@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import { useBracketStore } from './src/store/bracketStore';
-import { useMatch, useMatchStore } from './src/store/matchStore';
-import { useTossState, useTossStore } from './src/store/tossStore';
+import { useBracketStore, type AppView } from './src/store/bracketStore';
+import { resetToDemo } from './src/store/demo';
+import { useMatch } from './src/store/matchStore';
+import { useTossState } from './src/store/tossStore';
 import { isTossComplete } from './src/toss/derive';
 import BracketScreen from './src/ui/BracketScreen';
+import { ErrorBoundary } from './src/ui/ErrorBoundary';
 import InningsBreakScreen from './src/ui/InningsBreakScreen';
 import InningsSetupScreen from './src/ui/InningsSetupScreen';
 import ResultScreen from './src/ui/ResultScreen';
@@ -23,14 +25,41 @@ import { FAINT, INK, LIME, LINE } from './src/ui/theme';
  * landing screen (§7 — a judge should arrive mid-innings, not at a menu) and
  * the draw is one tap away.
  */
-export default function App() {
+/**
+ * The routing fold itself, deliberately a SEPARATE component from App.
+ *
+ * `useTossState()` and `useMatch()` fold persisted data, so corrupt storage
+ * makes them throw. React only catches a throw from a component BELOW the
+ * boundary — if these hooks ran in App's own body the boundary above them
+ * could never fire, and the judge would get a white page.
+ */
+function Screens({
+  view,
+  chaseSetup,
+  onStartChase,
+}: {
+  view: AppView;
+  chaseSetup: boolean;
+  onStartChase: () => void;
+}) {
   const toss = useTossState();
   const { phase } = useMatch();
-  const resetMatch = useMatchStore((s) => s.resetMatch);
-  const resetToss = useTossStore((s) => s.resetToss);
+
+  if (view === 'BRACKET') return <BracketScreen />;
+  if (!isTossComplete(toss)) return <TossScreen />;
+  if (phase === 'NO_MATCH') return <InningsSetupScreen />;
+  if (phase === 'BREAK') {
+    return chaseSetup ? <InningsSetupScreen /> : <InningsBreakScreen onStartChase={onStartChase} />;
+  }
+  if (phase === 'COMPLETE') return <ResultScreen />;
+  return <ScoringScreen />;
+}
+
+export default function App() {
+  // Only cheap, non-throwing state up here: everything that folds persisted
+  // data lives in <Screens/>, inside the boundary.
   const view = useBracketStore((s) => s.view);
   const setView = useBracketStore((s) => s.setView);
-  const resetBracket = useBracketStore((s) => s.resetBracket);
 
   // The only piece of pure UI state: has the scorer left the break screen to
   // pick the chasing openers? Losing it on reload just shows the break again.
@@ -39,23 +68,11 @@ export default function App() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="light" />
-      {view === 'BRACKET' ? (
-        <BracketScreen />
-      ) : !isTossComplete(toss) ? (
-        <TossScreen />
-      ) : phase === 'NO_MATCH' ? (
-        <InningsSetupScreen />
-      ) : phase === 'BREAK' ? (
-        chaseSetup ? (
-          <InningsSetupScreen />
-        ) : (
-          <InningsBreakScreen onStartChase={() => setChaseSetup(true)} />
-        )
-      ) : phase === 'COMPLETE' ? (
-        <ResultScreen />
-      ) : (
-        <ScoringScreen />
-      )}
+      {/* The bar below stays OUTSIDE the boundary, so a screen that throws
+          still leaves the judge a way back to the bracket and the reset. */}
+      <ErrorBoundary>
+        <Screens view={view} chaseSetup={chaseSetup} onStartChase={() => setChaseSetup(true)} />
+      </ErrorBoundary>
 
       {/* §7 — judge #3 must not inherit judge #2's mess. */}
       <View style={styles.bar}>
@@ -68,9 +85,7 @@ export default function App() {
         <Pressable
           style={styles.barItem}
           onPress={() => {
-            resetMatch();
-            resetToss();
-            resetBracket();
+            resetToDemo();
             setChaseSetup(false);
           }}
         >

@@ -15,8 +15,7 @@ and validated.**
 - Web build proven end to end (`npx expo export -p web`), not just compiled — a full match
   was played in a browser: 5-over innings → break → chase → result, then a bracket tie
   played the same way and its winner posted into the semi-final.
-- Pushed to https://github.com/ChandanBose666/UltimateCricket (public). **The bracket
-  commits are local — push them.**
+- Pushed to https://github.com/ChandanBose666/UltimateCricket (public).
 
 **Do not refactor or rewrite `src/engine/` or `src/toss/`.** If you need behaviour they
 lack, add a failing test first, then extend. They are the parts of this build that are

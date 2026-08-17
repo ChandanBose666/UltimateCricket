@@ -17,6 +17,7 @@ import { deriveBracket, tieById } from '../bracket/derive';
 import { TOURNAMENT_TEAMS, squadFor, teamNameFor } from '../bracket/teams';
 import { canRecord } from '../bracket/validate';
 import type { BracketResults, BracketState, TieId, TieResult } from '../bracket/types';
+import { DEMO } from '../seed/demo';
 import { useMatchStore } from './matchStore';
 import { useTossStore } from './tossStore';
 
@@ -42,8 +43,9 @@ interface BracketStore {
 export const useBracketStore = create<BracketStore>()(
   persist(
     (set, get) => ({
-      results: {},
-      activeTieId: null,
+      // Three quarter-finals already played, the fourth being scored (§7).
+      results: { ...DEMO.results },
+      activeTieId: DEMO.activeTieId,
       view: 'MATCH',
 
       setView: (view) => set({ view }),
@@ -78,12 +80,14 @@ export const useBracketStore = create<BracketStore>()(
 
       clearActiveTie: () => set({ activeTieId: null }),
 
-      // Demo reset (plan §7). The match and toss stores are reset alongside it
-      // by App's reset button; this only clears the draw.
+      // Clears the draw entirely — the "Clear the draw" control on the bracket
+      // screen. The judge-facing "Reset demo" is `resetToDemo()` in ./demo,
+      // which puts the seeded half-played tournament back instead.
       resetBracket: () => set({ results: {}, activeTieId: null, view: 'MATCH' }),
     }),
     {
-      name: 'uc-bracket-v1',
+      // v2: the seeded half-played draw replaced the empty one.
+      name: 'uc-bracket-v2',
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),

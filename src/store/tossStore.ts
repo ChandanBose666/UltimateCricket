@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { DEMO } from '../seed/demo';
 import { deriveToss } from '../toss/derive';
 import { isValidToss } from '../toss/validate';
 import type { TossAction, TossMethod, TossState } from '../toss/types';
@@ -41,16 +42,22 @@ interface TossStore {
   dispatch: (a: TossAction) => boolean;
   setPendingNonce: (n: string | null) => void;
   setTeamName: (side: 'home' | 'away', name: string) => void;
-  /** Demo reset (plan §7). Discards the match; never an edit of a confirmed toss. */
+  /**
+   * Clear the toss log so a fresh one can be run. Used when a bracket tie
+   * starts. Never an edit of a confirmed toss — the old log is discarded
+   * whole, which is not a path Law 13.5 forbids.
+   */
   resetToss: () => void;
 }
 
 export const useTossStore = create<TossStore>()(
   persist(
     (set, get) => ({
-      home: { id: 'home', name: 'Mumbai Colts' },
-      away: { id: 'away', name: 'Pune Strikers' },
-      actions: [],
+      home: { id: 'home', name: DEMO.homeName },
+      away: { id: 'away', name: DEMO.awayName },
+      // The seeded toss is already confirmed, so the app opens on the scoring
+      // screen rather than making a judge run a toss first (§7).
+      actions: [...DEMO.tossActions],
       pendingNonce: null,
 
       dispatch: (a) => {
@@ -69,7 +76,8 @@ export const useTossStore = create<TossStore>()(
       resetToss: () => set({ actions: [], pendingNonce: null }),
     }),
     {
-      name: 'uc-toss-v1',
+      // v2: the seeded, already-confirmed toss replaced the empty action log.
+      name: 'uc-toss-v2',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
         home: s.home,
